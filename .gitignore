@@ -1,0 +1,6 @@
+.venv
+/models
+/faces
+*.png
+*.pyc
+__pycache__
