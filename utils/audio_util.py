@@ -4,7 +4,8 @@ import os
 def extract_audio(video_path: str, output_audio_path: str):
     try:
         subprocess.run([
-            "ffmpeg", "-y", "-i", video_path,
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-i", video_path,
             "-vn",                   # Skip video
             "-acodec", "copy",        # Encode audio as AAC
             output_audio_path
@@ -17,7 +18,7 @@ def add_audio_to_video(video_path: str, audio_path: str, output_path: str):
     temp_output = f"{output_path}.temp.mp4"
     try:
         subprocess.run([
-            "ffmpeg", "-y",
+            "ffmpeg", "-y", "-loglevel", "error",
             "-i", video_path,
             "-i", audio_path,
             "-c:v", "copy",
