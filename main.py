@@ -5,6 +5,7 @@ import argparse
 
 from faceswap.image import ImageSwapper
 from faceswap.video import VideoSwapper
+import os
 
 # Argument parser for command line options
 parser = argparse.ArgumentParser(description="Face Swap with InsightFace and Inswapper_128")
@@ -14,7 +15,7 @@ parser.add_argument("-o", "--output", default="output.png", help="Output image p
 args = parser.parse_args()
 
 # Init face detector
-app = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider'])
+app = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
 app.prepare(ctx_id=0)
 
 # Load inswapper model
@@ -24,10 +25,22 @@ swapper = get_model('models/inswapper_128.onnx', download=False, download_zip=Fa
 face_mime_type, _ = mimetypes.guess_type(args.face)
 media_mime_type, _ = mimetypes.guess_type(args.media)
 
+# Setting output name if not provided
+if not args.output or args.output == "output.png":
+    face_base = os.path.splitext(os.path.basename(args.face))[0]
+    media_base = os.path.splitext(os.path.basename(args.media))[0]
+    args.output = f"{face_base}_{media_base}"
+    # Add extension based on media type
+    if media_mime_type and media_mime_type.startswith('image'):
+        args.output += ".png"
+    elif media_mime_type and media_mime_type.startswith('video'):
+        args.output += ".mp4"
+
 if face_mime_type.startswith('image') and media_mime_type:
 
     if media_mime_type.startswith('image'):
         ImageSwapper(app, swapper, args.face, args.media, args.output).swap_faces()
+        print(f"✅ Face swapped image saved as {args.output}")  
     elif media_mime_type.startswith('video'):
         VideoSwapper(app, swapper, args.face, args.media, args.output).swap_faces()
     else:
