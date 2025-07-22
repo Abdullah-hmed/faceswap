@@ -2,5 +2,6 @@
 /models
 /faces
 *.png
+*.mp4
 *.pyc
 __pycache__

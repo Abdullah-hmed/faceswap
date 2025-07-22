@@ -21,7 +21,8 @@ class ImageSwapper:
         if src_faces and tgt_faces:
             result = self.swapper.get(target_img, tgt_faces[0], src_faces[0], paste_back=True)
             cv2.imwrite(self.output, result)
-            print(f"✅ Face swapped saved as {self.output}")
+            # print(f"✅ Face swapped saved as {self.output}")
         else:
-            print("❌ Face(s) not found in images.")
-        return result if src_faces and tgt_faces else None
+            cv2.imwrite(self.output, target_img)
+            # print(f"⚠️ No face(s) found. Original image saved as {self.output}")
+            return target_img

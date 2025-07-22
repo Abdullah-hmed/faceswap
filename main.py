@@ -14,7 +14,7 @@ parser.add_argument("-o", "--output", default="output.png", help="Output image p
 args = parser.parse_args()
 
 # Init face detector
-app = FaceAnalysis(name='buffalo_l')
+app = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider'])
 app.prepare(ctx_id=0)
 
 # Load inswapper model
