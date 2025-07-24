@@ -4,7 +4,7 @@ from flask_socketio import SocketIO, emit
 import base64
 from PIL import Image # Used for potential image processing, not strictly needed just for echoing
 import io # Used for potential image processing, not strictly needed just for echoing
-import cv2
+import cv2, os
 import numpy as np
 
 from insightface.app import FaceAnalysis
@@ -26,7 +26,9 @@ def index():
     """
     Renders the main HTML page.
     """
-    return render_template('index.html')
+    face_files = os.listdir('faces')  # List available faces in the 'faces' directory
+    face_list = [f for f in face_files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]  # Filter for image files
+    return render_template('index.html', face_list=face_list)
 
 @socketio.on('connect')
 def handle_connect():

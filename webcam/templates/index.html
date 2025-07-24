@@ -106,16 +106,9 @@
     <div id="prediction-box">
         <label for="faceSwapSelect">Choose face swap image:</label>
         <select id="faceSwapSelect">
-            <option value="sam.jpeg">Sam</option>
-            <option value="abdullah.jpeg">Abdullah</option>
-            <option value="sneako.png">Sneako</option>
-            <option value="joker.webp">Joker</option>
-            <option value="leo.jpeg">Leo</option>
-            <option value="diddy.jpg">Diddy</option>
-            <option value="jake.jpg">Jake</option>
-            <option value="ik.jpg">Imran Khan</option>
-            <option value="nawaz.jpg">Nawaz Sharif</option>
-            <option value="henry_cavil.webp">Henry Cavil</option>
+            {% for face in face_list %}
+                <option value="{{ face }}">{{ face }}</option>
+            {% endfor %}
         </select>
         <br>
         <button id="toggleBtn">Pause</button>
