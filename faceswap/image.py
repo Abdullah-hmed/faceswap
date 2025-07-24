@@ -25,4 +25,4 @@ class ImageSwapper:
         else:
             cv2.imwrite(self.output, target_img)
             # print(f"⚠️ No face(s) found. Original image saved as {self.output}")
-            return target_img
+            return target_img, self.output

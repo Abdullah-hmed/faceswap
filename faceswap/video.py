@@ -121,3 +121,4 @@ class VideoSwapper:
         print("✅ Temporary files cleaned up.")
 
         print(f"✅ Done! Final video saved at: {self.output_path}")
+        return self.output_path

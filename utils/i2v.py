@@ -1,8 +1,4 @@
-import cv2
-import os
 import sys
-from natsort import natsorted
-
 import os
 import cv2
 import subprocess
