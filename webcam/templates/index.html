@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webcam Stream</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px; /* Increased max-width to accommodate both streams */
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f0f0f0; /* Light background for better contrast */
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .stream-container {
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap; /* Allow wrapping on smaller screens */
+            gap: 20px; /* Space between video feeds */
+        }
+        .video-feed-box {
+            flex: 1; /* Allow boxes to grow and shrink */
+            min-width: 300px; /* Minimum width for each box */
+            max-width: 48%; /* Max width to fit two columns */
+            background-color: #ffffff;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .video-feed-box h2 {
+            margin-top: 0;
+            color: #555;
+        }
+        #video {
+            width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            display: block;
+            margin: 0 auto 10px auto;
+            transform: scaleX(-1); /* Mirror the webcam feed */
+        }
+        #processedImage { /* Removed transform: scaleX(-1) here */
+            width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            display: block;
+            margin: 0 auto 10px auto;
+            transform: scaleX(-1)
+        }
+        #prediction-box {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            text-align: center;
+            border: 1px solid #e0e0e0;
+        }
+        #pred {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        #conf {
+            color: #27ae60;
+            font-weight: bold;
+        }
+        .status {
+            text-align: center;
+            margin-top: 10px;
+            font-style: italic;
+            color: #7f8c8d;
+        }
+        #aspectRatio {
+            margin-top: 10px;
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <h1>Webcam Stream</h1>
+    
+    <div class="stream-container">
+        <div class="video-feed-box">
+            <h2>Live Camera Feed</h2>
+            <video id="video" autoplay playsinline></video>
+            <canvas id="canvas" style="display: none;"></canvas>
+            <p id="aspectRatio"></p>
+        </div>
+
+        <div class="video-feed-box">
+            <h2>Processed Image (from server)</h2>
+            <img id="processedImage" width="640" height="480" alt="Processed Image">
+        </div>
+    </div>
+
+    <div id="prediction-box">
+        <label for="faceSwapSelect">Choose face swap image:</label>
+        <select id="faceSwapSelect">
+            <option value="sam.jpeg">Sam</option>
+            <option value="abdullah.jpeg">Abdullah</option>
+            <option value="sneako.png">Sneako</option>
+            <option value="joker.webp">Joker</option>
+            <option value="leo.jpeg">Leo</option>
+            <option value="diddy.jpg">Diddy</option>
+            <option value="jake.jpg">Jake</option>
+            <option value="ik.jpg">Imran Khan</option>
+            <option value="nawaz.jpg">Nawaz Sharif</option>
+            <option value="henry_cavil.webp">Henry Cavil</option>
+        </select>
+        <br>
+        <button id="toggleBtn">Pause</button>
+    </div>
+    
+    <p class="status" id="status">Connecting...</p>
+
+    <script>
+        const socket = io('http://localhost:3000');
+
+        const statusElement = document.getElementById("status");
+        const video = document.getElementById("video");
+        const canvas = document.getElementById("canvas");
+        const context = canvas.getContext("2d");
+        const processedImage = document.getElementById("processedImage");
+        const aspectRatioElement = document.getElementById("aspectRatio");
+        const faceSwapSelect = document.getElementById("faceSwapSelect");
+        const toggleBtn = document.getElementById("toggleBtn");
+
+        let isPaused = false;
+        let isProcessing = false;
+        const FRAME_DELAY = 0;
+
+        toggleBtn.addEventListener('click', () => {
+            isPaused = !isPaused;
+            toggleBtn.textContent = isPaused ? "Resume" : "Pause";
+
+            if (!isPaused && !isProcessing) {
+                sendFrames(); // Resume immediately if not processing
+            }
+        });
+
+        socket.on('connect', () => {
+            statusElement.textContent = "Connected!";
+            startCamera();
+        });
+
+        socket.on('disconnect', () => {
+            statusElement.textContent = "Disconnected. Trying to reconnect...";
+        });
+
+        socket.on('frame_response', (data) => {
+            // Server sends back processed image
+            if (data.image) {
+                processedImage.src = data.image;
+            } else {
+                processedImage.src = '';
+            }
+
+            isProcessing = false;
+            if (!isPaused) {
+                setTimeout(sendFrames, FRAME_DELAY);
+            }
+        });
+
+        socket.on('status', (data) => {
+            console.log("Server Status:", data.message);
+        });
+
+        socket.on('error', (data) => {
+            console.error("Server Error:", data.message);
+            statusElement.textContent = "Server Error: " + data.message;
+        });
+
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" } 
+                });
+                video.srcObject = stream;
+
+                video.onloadedmetadata = () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    sendFrames();
+                    statusElement.textContent = "Streaming...";
+                };
+            } catch (err) {
+                console.error("Webcam error:", err);
+                statusElement.textContent = "Webcam error: " + err.message;
+            }
+        }
+
+        function sendFrames() {
+            if (isProcessing) return;
+
+            isProcessing = true;
+
+            const videoWidth = video.videoWidth;
+            const videoHeight = video.videoHeight;
+            const currentAspectRatio = videoWidth / videoHeight;
+            aspectRatioElement.innerHTML = `Original Aspect Ratio: ${currentAspectRatio.toFixed(2)}`;
+
+            const targetWidth = 640;
+            const targetHeight = 480;
+            const targetAspectRatio = targetWidth / targetHeight;
+
+            let newWidth, newHeight;
+            if(currentAspectRatio > targetAspectRatio) {
+                newWidth = targetWidth;
+                newHeight = targetWidth / currentAspectRatio;
+            } else {
+                newHeight = targetHeight;
+                newWidth = targetHeight * currentAspectRatio;
+            }
+
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+            context.fillStyle = 'black';
+            context.fillRect(0, 0, targetWidth, targetHeight);
+
+            const x = (targetWidth - newWidth) / 2;
+            const y = (targetHeight - newHeight) / 2;
+
+            context.drawImage(video, x, y, newWidth, newHeight);
+
+            const imageData = canvas.toDataURL('image/jpeg', 0.8);
+
+            socket.emit('frame', { image: imageData, face_swap: faceSwapSelect.value });
+        }
+    </script>
+</body>
+</html>
