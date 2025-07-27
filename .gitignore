@@ -1,7 +1,11 @@
 .venv
 /models
 /faces
+/outputs
+/unedited
 *.png
+*.jpg
 *.mp4
 *.pyc
 __pycache__
+*.ipynb
