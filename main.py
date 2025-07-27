@@ -5,7 +5,18 @@ import argparse
 
 from faceswap.image import ImageSwapper
 from faceswap.video import VideoSwapper
-import os
+import os, sys, contextlib
+
+@contextlib.contextmanager
+def suppress_stderr():
+    with open(os.devnull, 'w') as devnull:
+        old_stderr = sys.stderr
+        sys.stderr = devnull
+        try:
+            yield
+        finally:
+            sys.stderr = old_stderr
+
 
 def main():
     parser = argparse.ArgumentParser(description="Face Swap with InsightFace and Inswapper_128")
@@ -16,9 +27,10 @@ def main():
 
     args = parser.parse_args()
 
-    # Init face detector
-    app = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
-    app.prepare(ctx_id=0)
+    with suppress_stderr():
+        # Init face detector
+        app = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+        app.prepare(ctx_id=0)
 
     # Load inswapper model
     swapper = get_model('models/inswapper_128.onnx', download=False, download_zip=False)
@@ -43,7 +55,7 @@ def main():
         if media_mime_type.startswith('image'):
             ImageSwapper(app, swapper, args.face, args.media, args.output, target_face_path=args.target_face).swap_faces()
         elif media_mime_type.startswith('video'):
-            VideoSwapper(app, swapper, args.face, args.media, args.output).swap_faces()
+            VideoSwapper(app, swapper, args.face, args.media, args.output, target_face_path=args.target_face).swap_faces()
         else:
             ValueError(f"Unsupported media type: {media_mime_type}")
 

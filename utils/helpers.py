@@ -13,3 +13,15 @@ def find_most_similar_face(main_pic_faces, target_face):
     best_face = main_pic_faces[best_match_idx]
             
     return best_face
+
+def find_most_similar_face_with_score(faces, reference_face):
+    best_face = None
+    best_score = -1
+
+    for face in faces:
+        similarity = np.dot(face.normed_embedding, reference_face.normed_embedding)
+        if similarity > best_score:
+            best_score = similarity
+            best_face = face
+
+    return best_face, best_score

@@ -8,17 +8,21 @@ from utils.i2v import frames_to_video
 from utils.v2i import video_to_frames
 from utils.audio_util import extract_audio, add_audio_to_video
 
+from utils.helpers import find_most_similar_face, find_most_similar_face_with_score
+
 app = None
 swapper = None
 source_face = None # This will be set inside the VideoSwapper class now, or passed in
-
+compare_face = None # This will be set inside the VideoSwapper class now, or passed in
 class VideoSwapper:
-    def __init__(self, app_instance, swapper_model, face_path, video_path, output_path="output.mp4"):
+    def __init__(self, app_instance, swapper_model, face_path, video_path, output_path="output.mp4", target_face_path=None, similarity_threshold=0.3):
         self.app = app_instance
         self.swapper = swapper_model
         self.face_path = face_path
         self.video_path = video_path
         self.output_path = output_path
+        self.target_face_path = target_face_path
+        self.similarity_threshold = similarity_threshold
 
         self.base_name = os.path.splitext(os.path.basename(video_path))[0]
         # These temp paths are now managed by the utils functions
@@ -30,6 +34,18 @@ class VideoSwapper:
         faces = self.app.get(source_img)
         if not faces:
             raise RuntimeError(f"No face found in source image at {face_path}!")
+        
+        if target_face_path:
+            compare_img = cv2.imread(target_face_path)
+            compare_faces = self.app.get(compare_img)
+
+            if not compare_faces:
+                raise ValueError("❌ No face detected in reference image.")
+            if len(compare_faces) > 1:
+                raise ValueError("❌ Multiple faces detected in reference image. Please provide an image with only one face.")
+            
+            self.compare_face = compare_faces[0]
+
         self.source_face = faces[0]
 
     def _swap_faces_in_frames(self):
@@ -42,7 +58,7 @@ class VideoSwapper:
             print("❌ No frames found in the directory for swapping.")
             return None
 
-        swapped_dir = f"{self.base_name}_swapped_frames" # Create a unique swapped dir
+        swapped_dir = f"{self.base_name}_swapped_frames"
         os.makedirs(swapped_dir, exist_ok=True)
 
         for frame_name in tqdm(frames, desc="🧠 Swapping faces in frames"):
@@ -50,22 +66,36 @@ class VideoSwapper:
             output_frame_path = os.path.join(swapped_dir, f"swapped_{frame_name}")
 
             target_img = cv2.imread(full_frame_path)
-            
             target_faces = self.app.get(target_img)
-            
-            # If no faces are found in the target frame, just copy the original frame
+
             if not target_faces:
                 cv2.imwrite(output_frame_path, target_img)
                 continue
 
-            # Swap faces for each detected face in the target frame
-            current_frame_with_swaps = target_img.copy() # Work on a copy
-            for face in target_faces:
-                # Use swapper directly to perform the swap
-                current_frame_with_swaps = self.swapper.get(current_frame_with_swaps, face, self.source_face, paste_back=True)
-            
-            # Save the swapped frame
-            cv2.imwrite(output_frame_path, current_frame_with_swaps)
+            current_frame_with_swaps = target_img.copy()
+
+            if hasattr(self, "compare_face") and self.compare_face:
+                # Use similarity-based filtering even if one face
+                best_face, score = find_most_similar_face_with_score(target_faces, self.compare_face)
+
+                if best_face and best_face.gender == self.source_face.gender and score >= self.similarity_threshold:
+                    swapped_img = self.swapper.get(current_frame_with_swaps, best_face, self.source_face, paste_back=True)
+                else:
+                    # No suitable match found — save original
+                    swapped_img = None
+            else:
+                # No compare_face set — loop through and use gender filtering
+                swapped_img = current_frame_with_swaps
+                for face in target_faces:
+                    if face.gender != self.source_face.gender:
+                        continue
+                    swapped_img = self.swapper.get(swapped_img, face, self.source_face, paste_back=True)
+
+            if swapped_img is not None:
+                cv2.imwrite(output_frame_path, swapped_img)
+            else:
+                # print(f"⚠️ No suitable face to swap in frame: {frame_name}. Saving original.")
+                cv2.imwrite(output_frame_path, target_img)
             
         return swapped_dir
 
