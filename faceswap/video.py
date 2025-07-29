@@ -15,7 +15,7 @@ swapper = None
 source_face = None # This will be set inside the VideoSwapper class now, or passed in
 compare_face = None # This will be set inside the VideoSwapper class now, or passed in
 class VideoSwapper:
-    def __init__(self, app_instance, swapper_model, face_path, video_path, output_path="output.mp4", target_face_path=None, similarity_threshold=0.3):
+    def __init__(self, app_instance, swapper_model, face_path, video_path, output_path="output.mp4", target_face_path=None, similarity_threshold=0.1):
         self.app = app_instance
         self.swapper = swapper_model
         self.face_path = face_path

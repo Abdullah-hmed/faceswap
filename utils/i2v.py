@@ -41,7 +41,7 @@ def frames_to_video(image_folder, output_video, fps=30, reencode_h264=True, dele
             "-crf", "23",
             "-movflags", "+faststart",
             output_video
-        ])
+        ], stdin=subprocess.DEVNULL)
         print(f"✅ H.264 re-encoded video saved as: {output_video}")
 
         if delete_temp and os.path.exists(temp_output):

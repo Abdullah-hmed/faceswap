@@ -108,12 +108,12 @@ def high_res_image_to_unicode(frame, new_width=80):
             bottom_pixel = resized_img.getpixel((x, y + 1))
             
             # Create half blocks with different colors for top and bottom
-            result.append(high_res_rgb_pixels(top_pixel, bottom_pixel))
+            result.append(_high_res_rgb_pixels(top_pixel, bottom_pixel))
         result.append('\n')
     
     return ''.join(result)
 
-def high_res_rgb_pixels(upper_pixel, lower_pixel):
+def _high_res_rgb_pixels(upper_pixel, lower_pixel):
     return f"\033[38;2;{upper_pixel[0]};{upper_pixel[1]};{upper_pixel[2]}m\033[48;2;{lower_pixel[0]};{lower_pixel[1]};{lower_pixel[2]}m▀\033[0m"
 
 

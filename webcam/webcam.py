@@ -91,9 +91,8 @@ def handle_frame(data):
         emit('error', {'message': f'Server error processing frame: {e}'}, room=request.sid)
 
 if __name__ == '__main__':
-    print("--- Starting SignLingo Flask Socket.IO Server ---")
+    print("--- Starting Webcam Swapper Flask Socket.IO Server ---")
     print("Server will be accessible on http://0.0.0.0:3000")
     print("To connect, open your HTML client file in a web browser.")
-    print("If connecting from WSL2, use your Windows machine's IP address (e.g., 172.X.X.X) instead of localhost.")
     # Set debug=True for development, allow_unsafe_werkzeug=True for non-production environments
     socketio.run(app, host='0.0.0.0', port=3000, debug=True, allow_unsafe_werkzeug=True)

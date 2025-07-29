@@ -2,7 +2,7 @@ from insightface.app import FaceAnalysis
 from insightface.model_zoo import get_model
 import mimetypes
 import argparse
-
+from rich.prompt import Prompt
 from faceswap.image import ImageSwapper
 from faceswap.video import VideoSwapper
 from utils.helpers import extract_faces_from_img, display_faces_terminal
@@ -23,7 +23,7 @@ def main():
     # Check if the input is an image or video based on MIME type
     face_mime_type, _ = mimetypes.guess_type(args.face)
     media_mime_type, _ = mimetypes.guess_type(args.media)
-
+    print("⌛ Loading the Swapper Model...")
     with open(os.devnull, 'w') as devnull:
         with redirect_stdout(devnull), redirect_stderr(devnull):
             app = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
@@ -50,7 +50,7 @@ def main():
                 faces_list = extract_faces_from_img(app, args.media)
                 display_faces_terminal(faces_list, len(faces_list))
                 try:
-                    chosen_face_idx = int(input("Which face would you like to swap? "))
+                    chosen_face_idx = int(Prompt.ask("[bold cyan]🔍 Which face cluster would you like to swap?[/bold cyan]", default="0"))
                 except ValueError:
                     print("❌ Please enter a valid number.")
                 ImageSwapper(app, swapper, args.face, args.media, args.output, target_face_embedding=faces_list[chosen_face_idx]['embedding']).swap_faces()
