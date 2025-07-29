@@ -87,8 +87,8 @@ class VideoSwapper:
                 # No compare_face set — loop through and use gender filtering
                 swapped_img = current_frame_with_swaps
                 for face in target_faces:
-                    if face.gender != self.source_face.gender:
-                        continue
+                    # if face.gender != self.source_face.gender:
+                    #     continue
                     swapped_img = self.swapper.get(swapped_img, face, self.source_face, paste_back=True)
 
             if swapped_img is not None:

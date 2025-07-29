@@ -27,10 +27,9 @@ def main():
 
     args = parser.parse_args()
 
-    with suppress_stderr():
-        # Init face detector
-        app = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
-        app.prepare(ctx_id=0)
+    # Init face detector
+    app = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+    app.prepare(ctx_id=0)
 
     # Load inswapper model
     swapper = get_model('models/inswapper_128.onnx', download=False, download_zip=False)
@@ -55,7 +54,7 @@ def main():
         if media_mime_type.startswith('image'):
             ImageSwapper(app, swapper, args.face, args.media, args.output, target_face_path=args.target_face).swap_faces()
         elif media_mime_type.startswith('video'):
-            VideoSwapper(app, swapper, args.face, args.media, args.output, target_face_path=args.target_face).swap_faces()
+            VideoSwapper(app, swapper, args.face, args.media, args.output, target_face_path=args.target_face, similarity_threshold=0.15).swap_faces()
         else:
             ValueError(f"Unsupported media type: {media_mime_type}")
 
