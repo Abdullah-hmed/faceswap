@@ -202,6 +202,7 @@ def get_mean_embedding_from_cluster(face_db, chosen_cluster_id):
         return None
 
     mean_embedding = np.mean(cluster_embeddings, axis=0)
+    mean_embedding /= np.linalg.norm(mean_embedding)
     return mean_embedding
 
 

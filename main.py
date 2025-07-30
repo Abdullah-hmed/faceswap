@@ -8,15 +8,16 @@ from faceswap.video import VideoSwapper
 from utils.helpers import cluster_faces_from_video, extract_faces_from_img, display_faces_terminal, get_mean_embedding_from_cluster
 import os, sys
 from contextlib import redirect_stdout, redirect_stderr
+import warnings
 
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 def main():
     parser = argparse.ArgumentParser(description="Face Swap with InsightFace and Inswapper_128")
     parser.add_argument("-f", "--face", help="Path to the face to be used")
     parser.add_argument("-m", "--media", help="Path to target image (face to be replaced)")
     parser.add_argument("-o", "--output", default="output.png", help="Output image path (default: output.png)")
-    parser.add_argument("--target-face", help="Path to the target face image for similarity matching", default=None)
-    parser.add_argument('--choose-face', action='store_true', help='Choose a face to swap from within image')
+    parser.add_argument('--choose-face', action='store_true', help='Choose a face to swap from within image', default=None)
 
     args = parser.parse_args()
 
@@ -59,8 +60,9 @@ def main():
                 ImageSwapper(app, swapper, args.face, args.media, args.output).swap_faces()
 
         elif media_mime_type.startswith('video'):
+            target_face_embedding = None
             if args.choose_face:
-                print("⌛ Detecting Faces in the video...")
+                print("🔄 Detecting Faces in the video...")
                 face_db, samples = cluster_faces_from_video(args.media, app)
                 display_faces_terminal(samples, len(samples))
                 try:
@@ -69,7 +71,7 @@ def main():
                     print("❌ Please enter a valid number.")
                 target_face_embedding = get_mean_embedding_from_cluster(face_db, chosen_cluster_idx)
 
-            VideoSwapper(app, swapper, args.face, args.media, args.output, compare_face_embedding=target_face_embedding, similarity_threshold=0.9).swap_faces()
+            VideoSwapper(app, swapper, args.face, args.media, args.output, compare_face_embedding=target_face_embedding, similarity_threshold=0.45).swap_faces()
         else:
             ValueError(f"Unsupported media type: {media_mime_type}")
 
