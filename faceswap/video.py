@@ -15,13 +15,13 @@ swapper = None
 source_face = None # This will be set inside the VideoSwapper class now, or passed in
 compare_face = None # This will be set inside the VideoSwapper class now, or passed in
 class VideoSwapper:
-    def __init__(self, app_instance, swapper_model, face_path, video_path, output_path="output.mp4", target_face_path=None, similarity_threshold=0.1):
+    def __init__(self, app_instance, swapper_model, face_path, video_path, output_path="output.mp4", compare_face_embedding=None, similarity_threshold=0.1):
         self.app = app_instance
         self.swapper = swapper_model
         self.face_path = face_path
         self.video_path = video_path
         self.output_path = output_path
-        self.target_face_path = target_face_path
+        self.compare_face_embedding = compare_face_embedding
         self.similarity_threshold = similarity_threshold
 
         self.base_name = os.path.splitext(os.path.basename(video_path))[0]
@@ -35,16 +35,7 @@ class VideoSwapper:
         if not faces:
             raise RuntimeError(f"No face found in source image at {face_path}!")
         
-        if target_face_path:
-            compare_img = cv2.imread(target_face_path)
-            compare_faces = self.app.get(compare_img)
-
-            if not compare_faces:
-                raise ValueError("❌ No face detected in reference image.")
-            if len(compare_faces) > 1:
-                raise ValueError("❌ Multiple faces detected in reference image. Please provide an image with only one face.")
-            
-            self.compare_face = compare_faces[0]
+        self.compare_face_embedding = compare_face_embedding
 
         self.source_face = faces[0]
 
@@ -74,9 +65,9 @@ class VideoSwapper:
 
             current_frame_with_swaps = target_img.copy()
 
-            if hasattr(self, "compare_face") and self.compare_face:
-                # Use similarity-based filtering even if one face
-                best_face, score = find_most_similar_face_with_score(target_faces, self.compare_face)
+            if self.compare_face_embedding is not None:
+                best_face, score = find_most_similar_face_with_score(target_faces, self.compare_face_embedding)
+
 
                 if best_face and best_face.gender == self.source_face.gender and score >= self.similarity_threshold:
                     swapped_img = self.swapper.get(current_frame_with_swaps, best_face, self.source_face, paste_back=True)

@@ -7,6 +7,8 @@ from PIL import Image
 import cv2, shutil
 from sklearn.cluster import DBSCAN
 from collections import defaultdict
+from scipy.spatial.distance import cosine
+from collections import defaultdict, Counter
 
 def cosine_similarity(emb1, emb2):
             emb1 = emb1 / np.linalg.norm(emb1)
@@ -22,12 +24,12 @@ def find_most_similar_face(main_pic_faces, target_face):
             
     return best_face
 
-def find_most_similar_face_with_score(faces, reference_face):
+def find_most_similar_face_with_score(faces, reference_embedding):
     best_face = None
     best_score = -1
 
     for face in faces:
-        similarity = np.dot(face.normed_embedding, reference_face.normed_embedding)
+        similarity = np.dot(face.normed_embedding, reference_embedding)
         if similarity > best_score:
             best_score = similarity
             best_face = face
@@ -82,7 +84,125 @@ def extract_faces_from_img(app, image_path):
 
     return face_entries
 
+def cluster_faces_from_video(video_path, app, sample_every_n=5,
+                             eps=0.7, min_samples=8, merge_thresh=0.35):
+    """
+    Processes a video, extracts face embeddings, clusters them, merges similar clusters,
+    and returns thumbnails with cluster IDs.
 
+    Parameters:
+    - video_path: str
+    - app: initialized insightface.FaceAnalysis
+    - sample_every_n: int (how frequently to sample frames)
+    - eps: float (DBSCAN epsilon)
+    - min_samples: int (DBSCAN min_samples)
+    - merge_thresh: float (cosine threshold for post-merge)
+
+    Returns:
+    - face_db: list of all face records with cluster_id assigned
+    - cluster_samples: list of (cluster_id, face crop) pairs for visualization
+    """
+    face_db = []
+    cap = cv2.VideoCapture(video_path)
+    frame_idx = 0
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        if frame_idx % sample_every_n == 0:
+            faces = app.get(frame)
+            for face in faces:
+                cropped = _crop_face(frame, face.bbox)
+                face_db.append({
+                    "frame_index": frame_idx,
+                    "bbox": face.bbox,
+                    "embedding": face.embedding,
+                    "landmarks": face.kps,
+                    "crop": cropped
+                })
+
+        frame_idx += 1
+
+    cap.release()
+    print(f"✅ Total number of faces detected: {len(face_db)}")
+
+    # Normalize embeddings
+    embeddings = np.array([entry["embedding"] for entry in face_db])
+    embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
+
+    # DBSCAN clustering
+    clusterer = DBSCAN(eps=eps, min_samples=min_samples).fit(embeddings)
+    for entry, label in zip(face_db, clusterer.labels_):
+        entry["cluster_id"] = label
+
+    # Post-processing: Merge similar clusters
+    cluster_faces = defaultdict(list)
+    cluster_means = {}
+
+    for entry in face_db:
+        cid = entry["cluster_id"]
+        if cid == -1:
+            continue
+        cluster_faces[cid].append(entry["embedding"])
+
+    for cid, embs in cluster_faces.items():
+        cluster_means[cid] = np.mean(embs, axis=0)
+
+    merge_map = {}
+    cluster_ids = list(cluster_means.keys())
+    for i in range(len(cluster_ids)):
+        for j in range(i + 1, len(cluster_ids)):
+            cid1, cid2 = cluster_ids[i], cluster_ids[j]
+            dist = cosine(cluster_means[cid1], cluster_means[cid2])
+            if dist < merge_thresh:
+                merge_map[cid2] = cid1
+
+    for entry in face_db:
+        cid = entry["cluster_id"]
+        while cid in merge_map:
+            cid = merge_map[cid]
+        entry["cluster_id"] = cid
+
+    # Cluster thumbnail collection
+    seen = set()
+    cluster_samples = []
+    for entry in face_db:
+        cid = entry["cluster_id"]
+        if cid == -1 or cid in seen:
+            continue
+        seen.add(cid)
+        cluster_samples.append({
+            "cluster_id": cid,
+            "face_crop": entry["crop"]
+        })
+
+    return face_db, cluster_samples
+
+
+def get_mean_embedding_from_cluster(face_db, chosen_cluster_id):
+    """
+    Given a face_db and a cluster ID, return the mean embedding of that cluster.
+
+    Parameters:
+    - face_db: list of face entries, each with 'embedding' and 'cluster_id'
+    - chosen_cluster_id: int, the ID of the cluster to extract mean from
+
+    Returns:
+    - mean_embedding: np.ndarray of shape (512,) or None if cluster is invalid
+    """
+    cluster_embeddings = [
+        entry["embedding"] for entry in face_db
+        if entry["cluster_id"] == chosen_cluster_id
+    ]
+
+    if not cluster_embeddings:
+        print(f"❌ No faces found in cluster {chosen_cluster_id}")
+        return None
+
+    mean_embedding = np.mean(cluster_embeddings, axis=0)
+    return mean_embedding
 
 
 def high_res_image_to_unicode(frame, new_width=80):
