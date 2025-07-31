@@ -3,7 +3,7 @@ flask_socketio==5.5.1
 insightface==0.7.3
 natsort==8.4.0
 numpy==2.3.2
-onnxruntime==1.22.1
+onnxruntime_gpu==1.18.1
 opencv_python==4.10.0.84
 Pillow==11.3.0
 rich==14.1.0

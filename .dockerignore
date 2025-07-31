@@ -1,19 +1,29 @@
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.db
-*.sqlite3
+# Ignore data/output directories
+faces/
+unedited/
 outputs/
-*.ipynb_checkpoints/
-*.venv/
 
+# Ignore media files globally
 *.jpg
 *.jpeg
-*.png
 *.webp
-*.heic
+*.png
 *.mp4
 *.mov
-*.avi
-*.mkv
+*.heic
+
+# Ignore Jupyter notebooks
+*.ipynb
+
+# Python artifacts
+__pycache__/
+*.pyc
+
+# Virtualenvs
+.venv/
+env/
+venv/
+
+# Logs, caches, temp
+*.log
+*.tmp
