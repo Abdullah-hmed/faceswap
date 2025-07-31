@@ -18,7 +18,8 @@ WORKDIR /app
 # Copy only requirements first to cache pip install
 COPY requirements.txt .
 
-RUN pip install --upgrade pip && \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip && \
     pip install -r requirements.txt
 
 # Copy model files early for cache benefits
