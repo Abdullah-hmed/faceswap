@@ -1,8 +1,14 @@
 .venv
 /models
-/faces
-/outputs
-/unedited
+
+/faces/*
+/outputs/*
+/unedited/*
+
+!/faces/
+!/outputs/
+!/unedited/
+
 *.png
 *.jpg
 *.mp4
