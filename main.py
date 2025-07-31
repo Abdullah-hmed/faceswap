@@ -27,7 +27,7 @@ def main():
     print("⌛ Loading the Swapper Model...")
     with open(os.devnull, 'w') as devnull:
         with redirect_stdout(devnull), redirect_stderr(devnull):
-            app = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+            app = FaceAnalysis(name='buffalo_l', root='models', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
             app.prepare(ctx_id=0)
             swapper = get_model('models/inswapper_128.onnx', download=False, download_zip=False)
 
