@@ -11,7 +11,7 @@ from insightface.app import FaceAnalysis
 from insightface.model_zoo import get_model
 
 
-detector = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+detector = FaceAnalysis(name='buffalo_l', root='models', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
 detector.prepare(ctx_id=0, det_size=(320, 320))  # Prepare the face detector with a specific context ID and detection size
 
 swapper = get_model('models/inswapper_128.onnx', download=False, download_zip=False)  # Load the face swapper model
