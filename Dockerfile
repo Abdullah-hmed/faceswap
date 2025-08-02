@@ -1,34 +1,44 @@
-# Use NVIDIA base image with CUDA 11.8 and cuDNN 8
-FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+# Stage 1
+FROM superlinear/python-gpu:3.11-cuda11.8 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install Python and system dependencies
-RUN apt-get update && \
-    apt-get install -y python3.11 python3.11-venv python3.11-dev python3-pip ffmpeg git libgl1 && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+# Install all system dependencies, including build-essential and git
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    git \
+    libgl1 \
+    build-essential \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set Python 3.11 as default
-RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 && \
-    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
+# Set working directory and copy requirements
+WORKDIR /app
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Stage 2
+FROM superlinear/python-gpu:3.11-cuda11.8 AS final
+
+# Installing only runtime dependencies
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libgl1 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy only requirements first to cache pip install
-COPY requirements.txt .
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --upgrade pip && \
-    pip install -r requirements.txt
-
-# Copy model files early for cache benefits
 COPY models/ /app/models/
-
-# Copy source code and everything else
 COPY . .
 
-# Expose for Flask
 EXPOSE 3000
 
 ENTRYPOINT ["python"]
