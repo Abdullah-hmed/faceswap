@@ -48,7 +48,7 @@ def handle_disconnect():
     """
     print(f'Client disconnected: {request.sid}')
 
-@socketio.on('frame') # Changed from 'image' to 'frame' to match frontend
+@socketio.on('frame')
 def handle_frame(data):
     """
     Handles incoming webcam frames from the client.
@@ -58,11 +58,9 @@ def handle_frame(data):
     upscale_value = data.get('upscale_value', 1)
     face_swap = data.get('face_swap', None) # Optional face swap parameter
     try:
-        # --- Placeholder for your ML model inference or image processing ---
-        # In a real application, you would process image_data_base64 here.
         # For this request, we are simply echoing it back.
         image = Image.open(io.BytesIO(base64.b64decode(image_data_base64.split(',')[1]))) # Decode base64 and open image
-        # Load the source image for swapping (replace 'source.jpg' with your actual source image filename)
+        # Load the source image for swapping
         source_path = f'faces/{face_swap}'
         source_img = cv2.imread(source_path)
         target_img = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
@@ -82,9 +80,6 @@ def handle_frame(data):
             swapped_pil.save(buffered, format="JPEG")
             swapped_base64 = "data:image/jpeg;base64," + base64.b64encode(buffered.getvalue()).decode()
             image_data_base64 = swapped_base64
-        # Simulate a prediction result
-        dummy_label = "ECHO" # Example label
-        dummy_confidence = 0.75 # Example confidence
 
         # Emit the prediction and the received image back to the client
         emit('frame_response', {
