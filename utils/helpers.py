@@ -9,6 +9,7 @@ from sklearn.cluster import DBSCAN
 from collections import defaultdict
 from scipy.spatial.distance import cosine
 from collections import defaultdict, Counter
+from insightface.utils import face_align
 
 def cosine_similarity(emb1, emb2):
             emb1 = emb1 / np.linalg.norm(emb1)
@@ -289,3 +290,145 @@ def display_faces_terminal(face_entries, max_faces=5, resize_width=20):
 
         # Convert and render the image as unicode block
         print(high_res_image_to_unicode(rgb_img, new_width=resize_width))
+
+def highres_swap(inswapper, img, target_face, source_face, upscale=1):
+    """
+    Performs high-resolution face swapping using a tile-based "pixel-boost" pipeline.
+    This mimics the approach used by roop-floyd and RopePearl to overcome the
+    128x128 limitation of the InSwapper model.
+
+    Args:
+        inswapper: An instance of the INSwapper model.
+        img: The original image (NumPy array, BGR format).
+        target_face: A Face object representing the target face in `img`.
+        source_face: A Face object representing the source face to swap from.
+        upscale: The scaling factor for the output resolution (e.g., 2 for 2x, 4 for 4x).
+                 Output resolution will be (128 * upscale) x (128 * upscale).
+
+    Returns:
+        The image with the high-resolution swapped face (NumPy array, BGR format).
+    """
+
+    model_output_size = inswapper.input_size[0] # This is typically 128
+    subsample_size = model_output_size * upscale # Desired output size (e.g., 256 or 512)
+    pixel_boost_total = upscale # Number of tiles along one dimension (e.g., 2 for 2x2, 4 for 4x4)
+
+    def _implode_pixel_boost(aligned_face_frame, model_size, pixel_boost_total):
+        """
+        Splits a large aligned face frame into smaller tiles.
+        (S, S, 3) -> (N^2, M, M, 3) where S = N*M
+        """
+        subsample_frame = aligned_face_frame.reshape(model_size, pixel_boost_total, model_size, pixel_boost_total, 3)
+        subsample_frame = subsample_frame.transpose(1, 3, 0, 2, 4).reshape(pixel_boost_total ** 2, model_size, model_size, 3)
+        return subsample_frame
+
+    def _explode_pixel_boost(subsample_frames, model_size, pixel_boost_total, pixel_boost_size):
+        """
+        Reconstructs a large swapped face frame from smaller tiles.
+        (N^2, M, M, 3) -> (S, S, 3)
+        """
+        final_frame = np.stack(subsample_frames, axis=0).reshape(pixel_boost_total, pixel_boost_total, model_size, model_size, 3)
+        final_frame = final_frame.transpose(2, 0, 3, 1, 4).reshape(pixel_boost_size, pixel_boost_size, 3)
+        return final_frame
+
+    def _prepare_crop_frame(swap_frame):
+        """
+        Pre-processes a tile for direct ONNX model input.
+        (H, W, C) BGR -> (1, C, H, W) RGB, normalized float32
+        """
+        # BGR to RGB, normalize to [0, 1]
+        swap_frame = swap_frame[:, :, ::-1] / 255.0
+        # Transpose HWC to CHW
+        swap_frame = swap_frame.transpose(2, 0, 1)
+        # Add batch dimension and convert to float32
+        swap_frame = np.expand_dims(swap_frame, axis=0).astype(np.float32)
+        return swap_frame
+
+    def _normalize_swap_frame(swap_frame_output):
+        """
+        Post-processes the ONNX model output back to image format.
+        (1, C, H, W) float32 -> (H, W, C) BGR uint8
+        """
+        # Remove batch dimension
+        swap_frame_output = swap_frame_output[0]
+        # Transpose CHW to HWC
+        swap_frame_output = swap_frame_output.transpose(1, 2, 0)
+        # Denormalize and convert to uint8
+        swap_frame_output = (swap_frame_output * 255.0).round()
+        # RGB to BGR
+        swap_frame_output = swap_frame_output[:, :, ::-1]
+        return swap_frame_output.astype(np.uint8)
+
+
+    # Step 1: Align and upscale the target face to the desired high resolution
+    aligned_face, M_affine = face_align.norm_crop2(img, target_face.kps, subsample_size)
+
+    # Step 2: Implode the aligned high-res face into 128x128 tiles
+    subsample_frames = _implode_pixel_boost(aligned_face, model_output_size, pixel_boost_total)
+
+    # Step 3: Prepare latent embedding for the source face (done once)
+    latent = source_face.normed_embedding.reshape(1, -1)
+    latent = np.dot(latent, inswapper.emap)
+    latent /= np.linalg.norm(latent)
+
+    # Step 4: Swap each tile using the direct ONNX session call
+    swapped_tiles = []
+    for sliced_frame in subsample_frames:
+        # Pre-process the tile
+        prepared_tile_blob = _prepare_crop_frame(sliced_frame)
+
+        # Run the ONNX model session on the prepared tile and latent embedding
+        pred = inswapper.session.run(inswapper.output_names, {
+            inswapper.input_names[0]: prepared_tile_blob,
+            inswapper.input_names[1]: latent
+        })[0]
+
+        # Post-process the swapped tile
+        normalized_swapped_tile = _normalize_swap_frame(pred)
+        swapped_tiles.append(normalized_swapped_tile)
+
+    # Step 5: Reconstruct the full high-res face image from swapped tiles
+    highres_face = _explode_pixel_boost(swapped_tiles, model_output_size, pixel_boost_total, subsample_size)
+
+    # Step 6: Paste the high-res swapped face back into the original image
+    IM = cv2.invertAffineTransform(M_affine)
+    
+    # Create initial white mask
+    img_white = np.full((subsample_size, subsample_size), 255, dtype=np.float32)
+    
+    # Warp both the face and mask back to original image coordinates
+    face_img = cv2.warpAffine(highres_face, IM, (img.shape[1], img.shape[0]), borderMode=cv2.BORDER_REPLICATE)
+    img_mask = cv2.warpAffine(img_white, IM, (img.shape[1], img.shape[0]), borderValue=0.0)
+    
+    # Clean up the mask
+    img_mask[img_mask > 20] = 255
+    
+    # Calculate mask dimensions for adaptive kernel size
+    mask_h_inds, mask_w_inds = np.where(img_mask == 255)
+    if len(mask_h_inds) > 0 and len(mask_w_inds) > 0:
+        mask_h = np.max(mask_h_inds) - np.min(mask_h_inds)
+        mask_w = np.max(mask_w_inds) - np.min(mask_w_inds)
+        mask_size = int(np.sqrt(mask_h * mask_w))
+        
+        # Erode the mask
+        k = max(mask_size // 10, 10)
+        kernel = np.ones((k, k), np.uint8)
+        img_mask = cv2.erode(img_mask, kernel, iterations=1)
+        
+        # Apply Gaussian blur
+        k = max(mask_size // 20, 5)
+        kernel_size = (k, k)
+        blur_size = tuple(2 * i + 1 for i in kernel_size)
+        img_mask = cv2.GaussianBlur(img_mask, blur_size, 0)
+    
+    # Normalize mask
+    img_mask = img_mask.astype(np.float32) / 255.0
+    
+    # Expand mask to 3 channels
+    img_mask_3ch = np.stack([img_mask] * 3, axis=-1)
+    
+    # Blend the images
+    out_img = img_mask_3ch * face_img.astype(np.float32) + (1 - img_mask_3ch) * img.astype(np.float32)
+    out_img = out_img.astype(np.uint8)
+
+    return out_img

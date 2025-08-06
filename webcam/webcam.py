@@ -1,15 +1,18 @@
-# app.py (Modified to echo back received image)
+import os
+import sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit
 import base64
-from PIL import Image # Used for potential image processing, not strictly needed just for echoing
-import io # Used for potential image processing, not strictly needed just for echoing
+from PIL import Image
+import io
 import cv2, os
 import numpy as np
-
 from insightface.app import FaceAnalysis
 from insightface.model_zoo import get_model
-
+from utils.helpers import highres_swap
 
 detector = FaceAnalysis(name='buffalo_l', root='models', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
 detector.prepare(ctx_id=0, det_size=(320, 320))  # Prepare the face detector with a specific context ID and detection size
@@ -52,6 +55,7 @@ def handle_frame(data):
     Echoes the received image back along with dummy prediction data.
     """
     image_data_base64 = data['image'] # Extract the image data from the received object
+    upscale_value = data.get('upscale_value', 1)
     face_swap = data.get('face_swap', None) # Optional face swap parameter
     try:
         # --- Placeholder for your ML model inference or image processing ---
@@ -70,6 +74,7 @@ def handle_frame(data):
         # Swap first face found if both images have faces
         if src_faces and tgt_faces:
             swapped = swapper.get(target_img, tgt_faces[0], src_faces[0], paste_back=True)
+            swapped = highres_swap(swapper, target_img, tgt_faces[0], src_faces[0], upscale=upscale_value)
             # Convert swapped image back to PIL Image for encoding
             swapped_rgb = cv2.cvtColor(swapped, cv2.COLOR_BGR2RGB)
             swapped_pil = Image.fromarray(swapped_rgb)

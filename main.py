@@ -18,6 +18,7 @@ def main():
     parser.add_argument("-m", "--media", help="Path to target image (face to be replaced)")
     parser.add_argument("-o", "--output", default="output.png", help="Output image path (default: output.png)")
     parser.add_argument('--choose-face', action='store_true', help='Choose a face to swap from within image', default=None)
+    parser.add_argument('--upscale', type=int, default=1, help="Upscale factor for face swap (1 = 128x128, 2 = 256x256, higher values make renders slower!)")
 
     args = parser.parse_args()
 
@@ -30,6 +31,13 @@ def main():
             app = FaceAnalysis(name='buffalo_l', root='models', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
             app.prepare(ctx_id=0)
             swapper = get_model('models/inswapper_128.onnx', download=False, download_zip=False)
+
+
+    if args.upscale:
+        print(f"Upscaling face by factor of: {args.upscale}")
+        if not isinstance(args.upscale, int):
+            print("Non-number passed as upscale argument, exiting")
+            sys.exit(1)
 
 
     # Setting output name if not provided
@@ -54,10 +62,10 @@ def main():
                     chosen_face_idx = int(Prompt.ask("[bold cyan]🔍 Which face cluster would you like to swap?[/bold cyan]", default="0"))
                 except ValueError:
                     print("❌ Please enter a valid number.")
-                ImageSwapper(app, swapper, args.face, args.media, args.output, target_face_embedding=faces_list[chosen_face_idx]['embedding']).swap_faces()
+                ImageSwapper(app, swapper, args.face, args.media, args.output, args.upscale, target_face_embedding=faces_list[chosen_face_idx]['embedding']).swap_faces()
 
             else:
-                ImageSwapper(app, swapper, args.face, args.media, args.output).swap_faces()
+                ImageSwapper(app, swapper, args.face, args.media, args.output, args.upscale).swap_faces()
 
         elif media_mime_type.startswith('video'):
             target_face_embedding = None
@@ -71,7 +79,7 @@ def main():
                     print("❌ Please enter a valid number.")
                 target_face_embedding = get_mean_embedding_from_cluster(face_db, chosen_cluster_idx)
 
-            VideoSwapper(app, swapper, args.face, args.media, args.output, compare_face_embedding=target_face_embedding, similarity_threshold=0.45).swap_faces()
+            VideoSwapper(app, swapper, args.face, args.media, args.output, args.upscale, compare_face_embedding=target_face_embedding, similarity_threshold=0.45).swap_faces()
         else:
             ValueError(f"Unsupported media type: {media_mime_type}")
 

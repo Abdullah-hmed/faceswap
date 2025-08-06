@@ -111,7 +111,11 @@
             {% endfor %}
         </select>
         <br>
+        <label for="upscaleValue">Upscale Factor:</label>
+        <input type="number" id="upscaleValue" placeholder="1" value="1" min="1" step="1">
+        <br><br>
         <button id="toggleBtn">Pause</button>
+        
     </div>
     
     <p class="status" id="status">Connecting...</p>
@@ -227,7 +231,15 @@
 
             const imageData = canvas.toDataURL('image/jpeg', 0.8);
 
-            socket.emit('frame', { image: imageData, face_swap: faceSwapSelect.value });
+            const upscaleInput = document.getElementById("upscaleValue");
+            const upscaleValue = parseInt(upscaleInput.value) || 1;
+
+
+            socket.emit('frame', { 
+                image: imageData, 
+                face_swap: faceSwapSelect.value,
+                upscale_value: upscaleValue
+            });
         }
     </script>
 </body>
