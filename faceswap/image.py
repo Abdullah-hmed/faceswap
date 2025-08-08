@@ -3,13 +3,14 @@ import numpy as np
 from utils.helpers import cosine_similarity, highres_swap
 
 class ImageSwapper:
-    def __init__(self, app, swapper, source_path, target_path, output_path, upscale, target_face_embedding=None):
+    def __init__(self, app, swapper, source_path, target_path, output_path, upscale, restore_mouth=False, target_face_embedding=None):
         self.app = app
         self.swapper = swapper
         self.source_path = source_path
         self.target_path = target_path
         self.output_path = output_path
         self.upscale = upscale
+        self.restore_mouth = restore_mouth
         self.target_face_embedding = target_face_embedding  # Now expects a 512-dim embedding
 
     def swap_faces(self):
@@ -54,7 +55,7 @@ class ImageSwapper:
 
         # Perform face swap
         # result = self.swapper.get(target_img, selected_tgt_face, src_faces[0], paste_back=True)
-        result = highres_swap(self.swapper, target_img, selected_tgt_face, src_faces[0], upscale=self.upscale)
+        result = highres_swap(self.swapper, target_img, selected_tgt_face, src_faces[0], upscale=self.upscale, restore_mouth=self.restore_mouth)
 
         if result is not None:
             cv2.imwrite(self.output_path, result)

@@ -19,6 +19,7 @@ def main():
     parser.add_argument("-o", "--output", default="output.png", help="Output image path (default: output.png)")
     parser.add_argument('--choose-face', action='store_true', help='Choose a face to swap from within image', default=None)
     parser.add_argument('--upscale', type=int, default=1, help="Upscale factor for face swap (1 = 128x128, 2 = 256x256, higher values make renders slower!)")
+    parser.add_argument('--restore-mouth', action='store_true', help='Restore the original mouth', default=False)
 
     args = parser.parse_args()
 
@@ -62,10 +63,11 @@ def main():
                     chosen_face_idx = int(Prompt.ask("[bold cyan]🔍 Which face cluster would you like to swap?[/bold cyan]", default="0"))
                 except ValueError:
                     print("❌ Please enter a valid number.")
-                ImageSwapper(app, swapper, args.face, args.media, args.output, args.upscale, target_face_embedding=faces_list[chosen_face_idx]['embedding']).swap_faces()
+                ImageSwapper(app, swapper, args.face, args.media, args.output, args.upscale, restore_mouth=args.restore_mouth, 
+                             target_face_embedding=faces_list[chosen_face_idx]['embedding']).swap_faces()
 
             else:
-                ImageSwapper(app, swapper, args.face, args.media, args.output, args.upscale).swap_faces()
+                ImageSwapper(app, swapper, args.face, args.media, args.output, args.upscale, restore_mouth=args.restore_mouth).swap_faces()
 
         elif media_mime_type.startswith('video'):
             target_face_embedding = None
@@ -79,7 +81,8 @@ def main():
                     print("❌ Please enter a valid number.")
                 target_face_embedding = get_mean_embedding_from_cluster(face_db, chosen_cluster_idx)
 
-            VideoSwapper(app, swapper, args.face, args.media, args.output, args.upscale, compare_face_embedding=target_face_embedding, similarity_threshold=0.45).swap_faces()
+            VideoSwapper(app, swapper, args.face, args.media, args.output, args.upscale, restore_mouth=args.restore_mouth, 
+                         compare_face_embedding=target_face_embedding, similarity_threshold=0.45).swap_faces()
         else:
             ValueError(f"Unsupported media type: {media_mime_type}")
 

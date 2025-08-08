@@ -291,7 +291,7 @@ def display_faces_terminal(face_entries, max_faces=5, resize_width=20):
         # Convert and render the image as unicode block
         print(high_res_image_to_unicode(rgb_img, new_width=resize_width))
 
-def highres_swap(inswapper, img, target_face, source_face, upscale=1):
+def highres_swap(inswapper, img, target_face, source_face, upscale=1, restore_mouth=False):
     """
     Performs high-resolution face swapping using a tile-based "pixel-boost" pipeline.
     This mimics the approach used by roop-floyd and RopePearl to overcome the
@@ -304,6 +304,7 @@ def highres_swap(inswapper, img, target_face, source_face, upscale=1):
         source_face: A Face object representing the source face to swap from.
         upscale: The scaling factor for the output resolution (e.g., 2 for 2x, 4 for 4x).
                  Output resolution will be (128 * upscale) x (128 * upscale).
+        restore_mouth: A Boolean to decide whether the original mouth be masked onto the output image.
 
     Returns:
         The image with the high-resolution swapped face (NumPy array, BGR format).
@@ -359,6 +360,92 @@ def highres_swap(inswapper, img, target_face, source_face, upscale=1):
         swap_frame_output = swap_frame_output[:, :, ::-1]
         return swap_frame_output.astype(np.uint8)
 
+    def _create_mouth_mask(face, frame):
+        mouth_cutout = None
+        
+        landmarks = face.landmark_2d_106
+        if landmarks is not None:
+            # Get mouth landmarks (indices 52 to 71 typically represent the outer mouth)
+            mouth_points = landmarks[52:71].astype(np.int32)
+            
+            # Add padding to mouth area
+            min_x, min_y = np.min(mouth_points, axis=0)
+            max_x, max_y = np.max(mouth_points, axis=0)
+            min_x = max(0, min_x - (15*6))
+            min_y = max(0, min_y - 22)
+            max_x = min(frame.shape[1], max_x + (15*6))
+            max_y = min(frame.shape[0], max_y + (90*6))
+            
+            # Extract the mouth area from the frame using the calculated bounding box
+            mouth_cutout = frame[min_y:max_y, min_x:max_x].copy()
+
+        return mouth_cutout, (min_x, min_y, max_x, max_y)
+
+    def _create_feathered_mask(shape, feather_amount=30):
+        mask = np.zeros(shape[:2], dtype=np.float32)
+        center = (shape[1] // 2, shape[0] // 2)
+        cv2.ellipse(mask, center, (shape[1] // 2 - feather_amount, shape[0] // 2 - feather_amount), 
+                    0, 0, 360, 1, -1)
+        mask = cv2.GaussianBlur(mask, (feather_amount*2+1, feather_amount*2+1), 0)
+        return mask / np.max(mask)
+
+    def _apply_color_transfer(source, target):
+        """
+        Apply color transfer from target to source image
+        """
+        source = cv2.cvtColor(source, cv2.COLOR_BGR2LAB).astype("float32")
+        target = cv2.cvtColor(target, cv2.COLOR_BGR2LAB).astype("float32")
+
+        source_mean, source_std = cv2.meanStdDev(source)
+        target_mean, target_std = cv2.meanStdDev(target)
+
+        # Reshape mean and std to be broadcastable
+        source_mean = source_mean.reshape(1, 1, 3)
+        source_std = source_std.reshape(1, 1, 3)
+        target_mean = target_mean.reshape(1, 1, 3)
+        target_std = target_std.reshape(1, 1, 3)
+
+        # Perform the color transfer
+        source = (source - source_mean) * (target_std / source_std) + target_mean
+        return cv2.cvtColor(np.clip(source, 0, 255).astype("uint8"), cv2.COLOR_LAB2BGR)
+
+
+    def _apply_mouth_area(frame: np.ndarray, mouth_cutout: np.ndarray, mouth_box: tuple) -> np.ndarray:
+        min_x, min_y, max_x, max_y = mouth_box
+        box_width = max_x - min_x
+        box_height = max_y - min_y        
+
+        # Resize the mouth cutout to match the mouth box size
+        if mouth_cutout is None or box_width is None or box_height is None:
+            return frame
+        try:
+            resized_mouth_cutout = cv2.resize(mouth_cutout, (box_width, box_height))
+            
+            # Extract the region of interest (ROI) from the target frame
+            roi = frame[min_y:max_y, min_x:max_x]
+            
+            # Ensure the ROI and resized_mouth_cutout have the same shape
+            if roi.shape != resized_mouth_cutout.shape:
+                resized_mouth_cutout = cv2.resize(resized_mouth_cutout, (roi.shape[1], roi.shape[0]))
+            
+            # Apply color transfer from ROI to mouth cutout
+            color_corrected_mouth = _apply_color_transfer(resized_mouth_cutout, roi)
+            
+            # Create a feathered mask with increased feather amount
+            feather_amount = min(30, box_width // 15, box_height // 15)
+            mask = _create_feathered_mask(resized_mouth_cutout.shape, feather_amount)
+            
+            # Blend the color-corrected mouth cutout with the ROI using the feathered mask
+            mask = mask[:,:,np.newaxis]  # Add channel dimension to mask
+            blended = (color_corrected_mouth * mask + roi * (1 - mask)).astype(np.uint8)
+            
+            # Place the blended result back into the frame
+            frame[min_y:max_y, min_x:max_x] = blended
+        except Exception as e:
+            print(f'Error {e}')
+            pass
+
+        return frame
 
     # Step 1: Align and upscale the target face to the desired high resolution
     aligned_face, M_affine = face_align.norm_crop2(img, target_face.kps, subsample_size)
@@ -430,5 +517,9 @@ def highres_swap(inswapper, img, target_face, source_face, upscale=1):
     # Blend the images
     out_img = img_mask_3ch * face_img.astype(np.float32) + (1 - img_mask_3ch) * img.astype(np.float32)
     out_img = out_img.astype(np.uint8)
+
+    if restore_mouth:
+        mouth_cutout, mouth_bbox = _create_mouth_mask(target_face, img)
+        out_img = _apply_mouth_area(frame=out_img, mouth_cutout=mouth_cutout, mouth_box=mouth_bbox)
 
     return out_img
