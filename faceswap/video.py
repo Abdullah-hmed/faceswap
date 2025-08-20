@@ -84,7 +84,7 @@ class VideoSwapper:
                     # if face.gender != self.source_face.gender:
                     #     continue
                     # swapped_img = self.swapper.get(swapped_img, face, self.source_face, paste_back=True)
-                    swapped_img = highres_swap(self.swapper, swapped_img, face, self.source_face, upscale=self.upscale, restore_mouth=True)
+                    swapped_img = highres_swap(self.swapper, swapped_img, face, self.source_face, upscale=self.upscale, restore_mouth=self.restore_mouth)
 
             if swapped_img is not None:
                 cv2.imwrite(output_frame_path, swapped_img)
