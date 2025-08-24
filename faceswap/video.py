@@ -82,8 +82,8 @@ class VideoSwapper:
                 # No compare_face set — loop through
                 swapped_img = current_frame_with_swaps
                 for face in target_faces:
-                    if face.gender != self.source_face.gender:
-                        continue
+                    # if face.gender != self.source_face.gender:
+                    #     continue
                     # swapped_img = self.swapper.get(swapped_img, face, self.source_face, paste_back=True)
                     # swapped_img = highres_swap(self.swapper, swapped_img, face, self.source_face, upscale=self.upscale, restore_mouth=self.restore_mouth)
                     swapped_img = aligned_highres_swap(self.swapper, self.app, swapped_img, face, self.source_face, upscale=self.upscale, restore_mouth=self.restore_mouth)
