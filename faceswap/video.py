@@ -8,7 +8,7 @@ from utils.i2v import frames_to_video
 from utils.v2i import video_to_frames
 from utils.audio_util import extract_audio, add_audio_to_video
 
-from utils.helpers import find_most_similar_face, find_most_similar_face_with_score, highres_swap
+from utils.helpers import find_most_similar_face, find_most_similar_face_with_score, highres_swap, aligned_highres_swap
 
 app = None
 swapper = None
@@ -73,7 +73,8 @@ class VideoSwapper:
 
                 if best_face and best_face.gender == self.source_face.gender and score >= self.similarity_threshold:
                     # swapped_img = self.swapper.get(current_frame_with_swaps, best_face, self.source_face, paste_back=True)
-                    swapped_img = highres_swap(self.swapper, current_frame_with_swaps, best_face, self.source_face, upscale=self.upscale, restore_mouth=self.restore_mouth)
+                    # swapped_img = highres_swap(self.swapper, current_frame_with_swaps, best_face, self.source_face, upscale=self.upscale, restore_mouth=self.restore_mouth)
+                    swapped_img = aligned_highres_swap(self.swapper, self.app, current_frame_with_swaps, best_face, self.source_face, upscale=self.upscale, restore_mouth=self.restore_mouth)
                 else:
                     # No suitable match found — save original
                     swapped_img = None
@@ -81,10 +82,11 @@ class VideoSwapper:
                 # No compare_face set — loop through
                 swapped_img = current_frame_with_swaps
                 for face in target_faces:
-                    # if face.gender != self.source_face.gender:
-                    #     continue
+                    if face.gender != self.source_face.gender:
+                        continue
                     # swapped_img = self.swapper.get(swapped_img, face, self.source_face, paste_back=True)
-                    swapped_img = highres_swap(self.swapper, swapped_img, face, self.source_face, upscale=self.upscale, restore_mouth=self.restore_mouth)
+                    # swapped_img = highres_swap(self.swapper, swapped_img, face, self.source_face, upscale=self.upscale, restore_mouth=self.restore_mouth)
+                    swapped_img = aligned_highres_swap(self.swapper, self.app, swapped_img, face, self.source_face, upscale=self.upscale, restore_mouth=self.restore_mouth)
 
             if swapped_img is not None:
                 cv2.imwrite(output_frame_path, swapped_img)

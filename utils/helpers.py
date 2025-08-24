@@ -291,6 +291,65 @@ def display_faces_terminal(face_entries, max_faces=5, resize_width=20):
         # Convert and render the image as unicode block
         print(high_res_image_to_unicode(rgb_img, new_width=resize_width))
 
+def _get_rotation_from_face(img, face):
+    box = face.bbox.astype(int)
+    w, h = box[2] - box[0], box[3] - box[1]
+    kps = face.kps  # [left_eye, right_eye, nose, left_mouth, right_mouth]
+
+    if w > h:
+        # sideways
+        left_eye, right_eye = kps[0], kps[1]
+        if right_eye[1] > left_eye[1]:
+            aligned_img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            return aligned_img, -90   # CCW rotation
+        else:
+            aligned_img = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
+            return aligned_img, 90    # CW rotation
+    else:
+        # upright-ish
+        nose = kps[2]
+        eye_y = (kps[0][1] + kps[1][1]) / 2
+        if eye_y > nose[1]:
+            aligned_img = cv2.rotate(img, cv2.ROTATE_180)
+            return aligned_img, 180   # upside down
+        else:
+            return img, 0    # upright
+
+def aligned_highres_swap(swapper, app, img, target_face, source_face, upscale, restore_mouth=False):
+    """
+    Wraps the highres_swap function to add robust alignment support for stable swapping.
+    This function automatically corrects images with faces at unusual angles (e.g., sideways or
+    upside-down) to ensure consistent and high-quality face swapping, before returning the
+    result to the original orientation.
+
+    Args:
+        swapper: An instance of the INSwapper model.
+        app: The InsightFace app instance used for face detection.
+        img: The original image (NumPy array, BGR format).
+        target_face: A Face object representing the target face in `img`.
+        source_face: A Face object representing the source face to swap from.
+        upscale: The scaling factor for the output resolution (e.g., 2 for 2x, 4 for 4x).
+                 Output resolution will be (128 * upscale) x (128 * upscale).
+        restore_mouth: A Boolean to decide whether the original mouth should be masked onto the output image.
+
+    Returns:
+        The image with the high-resolution swapped face, restored to its original orientation
+        (NumPy array, BGR format).
+    """
+    aligned_path, restore_angle = _get_rotation_from_face(img, target_face)
+    aligned_face = app.get(aligned_path)[0]
+    new_swap = highres_swap(swapper, aligned_path, aligned_face, source_face, upscale=upscale, restore_mouth=restore_mouth)
+
+    if restore_angle == 90:
+        restored = cv2.rotate(new_swap, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    elif restore_angle == -90:
+        restored = cv2.rotate(new_swap, cv2.ROTATE_90_CLOCKWISE)
+    elif restore_angle == 180:
+        restored = cv2.rotate(new_swap, cv2.ROTATE_180)
+    else:
+        restored = new_swap
+    return restored
+
 def highres_swap(inswapper, img, target_face, source_face, upscale=1, restore_mouth=False):
     """
     Performs high-resolution face swapping using a tile-based "pixel-boost" pipeline.
