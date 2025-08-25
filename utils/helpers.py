@@ -295,60 +295,151 @@ def _get_rotation_from_face(img, face):
     box = face.bbox.astype(int)
     w, h = box[2] - box[0], box[3] - box[1]
     kps = face.kps  # [left_eye, right_eye, nose, left_mouth, right_mouth]
-
+    
     if w > h:
         # sideways
         left_eye, right_eye = kps[0], kps[1]
         if right_eye[1] > left_eye[1]:
             aligned_img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
-            return aligned_img, -90   # CCW rotation
+            return aligned_img, cv2.ROTATE_90_COUNTERCLOCKWISE
         else:
             aligned_img = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
-            return aligned_img, 90    # CW rotation
+            return aligned_img, cv2.ROTATE_90_CLOCKWISE
     else:
         # upright-ish
         nose = kps[2]
         eye_y = (kps[0][1] + kps[1][1]) / 2
         if eye_y > nose[1]:
+            # eyes below nose, face is upside down
             aligned_img = cv2.rotate(img, cv2.ROTATE_180)
-            return aligned_img, 180   # upside down
+            return aligned_img, cv2.ROTATE_180
         else:
-            return img, 0    # upright
+            # upright
+            return img, None
 
-def aligned_highres_swap(swapper, app, img, target_face, source_face, upscale, restore_mouth=False):
-    """
-    Wraps the highres_swap function to add robust alignment support for stable swapping.
-    This function automatically corrects images with faces at unusual angles (e.g., sideways or
-    upside-down) to ensure consistent and high-quality face swapping, before returning the
-    result to the original orientation.
-
-    Args:
-        swapper: An instance of the INSwapper model.
-        app: The InsightFace app instance used for face detection.
-        img: The original image (NumPy array, BGR format).
-        target_face: A Face object representing the target face in `img`.
-        source_face: A Face object representing the source face to swap from.
-        upscale: The scaling factor for the output resolution (e.g., 2 for 2x, 4 for 4x).
-                 Output resolution will be (128 * upscale) x (128 * upscale).
-        restore_mouth: A Boolean to decide whether the original mouth should be masked onto the output image.
-
-    Returns:
-        The image with the high-resolution swapped face, restored to its original orientation
-        (NumPy array, BGR format).
-    """
-    aligned_path, restore_angle = _get_rotation_from_face(img, target_face)
-    aligned_face = app.get(aligned_path)[0]
-    new_swap = highres_swap(swapper, aligned_path, aligned_face, source_face, upscale=upscale, restore_mouth=restore_mouth)
-
-    if restore_angle == 90:
-        restored = cv2.rotate(new_swap, cv2.ROTATE_90_COUNTERCLOCKWISE)
-    elif restore_angle == -90:
-        restored = cv2.rotate(new_swap, cv2.ROTATE_90_CLOCKWISE)
-    elif restore_angle == 180:
-        restored = cv2.rotate(new_swap, cv2.ROTATE_180)
+def _transform_bbox_after_rotation(bbox, original_shape, rotation_type):
+    if rotation_type is None:
+        return bbox
+        
+    orig_h, orig_w = original_shape[:2]
+    x1, y1, x2, y2 = bbox
+    
+    if rotation_type == cv2.ROTATE_90_CLOCKWISE:
+        new_x1 = orig_h - 1 - y2
+        new_y1 = x1
+        new_x2 = orig_h - 1 - y1
+        new_y2 = x2
+    elif rotation_type == cv2.ROTATE_90_COUNTERCLOCKWISE:
+        new_x1 = y1
+        new_y1 = orig_w - 1 - x2
+        new_x2 = y2
+        new_y2 = orig_w - 1 - x1
+    elif rotation_type == cv2.ROTATE_180:
+        new_x1 = orig_w - 1 - x2
+        new_y1 = orig_h - 1 - y2
+        new_x2 = orig_w - 1 - x1
+        new_y2 = orig_h - 1 - y1
     else:
-        restored = new_swap
-    return restored
+        return bbox
+    
+    return np.array([new_x1, new_y1, new_x2, new_y2])
+
+def _compute_iou(boxA, boxB):
+    """Calculate Intersection over Union of two bounding boxes"""
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2])
+    yB = min(boxA[3], boxB[3])
+    
+    # no intersection
+    if xB <= xA or yB <= yA:
+        return 0.0
+    
+    interArea = (xB - xA) * (yB - yA)
+    boxAArea = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1])
+    boxBArea = (boxB[2] - boxB[0]) * (boxB[3] - boxB[1])
+    
+    iou = interArea / float(boxAArea + boxBArea - interArea + 1e-8)
+    return iou
+
+def _rotate_back(img, rotation_type):
+    if rotation_type is None:
+        return img
+    elif rotation_type == cv2.ROTATE_90_CLOCKWISE:
+        return cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    elif rotation_type == cv2.ROTATE_90_COUNTERCLOCKWISE:
+        return cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
+    elif rotation_type == cv2.ROTATE_180:
+        return cv2.rotate(img, cv2.ROTATE_180)
+    else:
+        return img
+
+def aligned_highres_swap(swapper, app, img, target_face, source_face, upscale=1, restore_mouth=False):
+    """
+    Robust high-res face swap with automatic tilt correction and multi-face support.
+    
+    Args:
+        swapper: Face swapper model  
+        app: Face detector/analyzer
+        img: Input image
+        target_face: Face object to be replaced
+        source_face: Face object to use as replacement
+        upscale: Upscale factor for high-res processing
+        restore_mouth: Whether to restore mouth details
+        
+    Returns:
+        Swapped image, or original image if swap fails
+    """
+    try:
+        original_shape = img.shape
+        
+        # rotate image to make face upright
+        aligned_img, rotation_type = _get_rotation_from_face(img, target_face)
+        
+        aligned_faces = app.get(aligned_img)
+        
+        if not aligned_faces:
+            print("No faces detected in aligned image, falling back to original")
+            return highres_swap(swapper, img, target_face, source_face, upscale=upscale, restore_mouth=restore_mouth)
+        
+        # transform original bbox to aligned image coordinates
+        expected_bbox = _transform_bbox_after_rotation(
+            target_face.bbox, original_shape, rotation_type
+        )
+        
+        # iou filtering for face
+        best_face = None
+        best_iou = 0.0
+        
+        for face in aligned_faces:
+            iou = _compute_iou(expected_bbox, face.bbox)
+            if iou > best_iou:
+                best_iou = iou
+                best_face = face
+        
+        # fallback to largest face
+        if best_face is None or best_iou < 0.1:
+            print(f"Poor face match (IoU: {best_iou:.3f}), using largest face")
+            # Sort faces by area and pick the largest
+            best_face = max(aligned_faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
+        
+        # high-res swap on aligned image
+        swapped_aligned = highres_swap(
+            swapper, aligned_img, best_face, source_face, 
+            upscale=upscale, restore_mouth=restore_mouth
+        )
+        
+        # realign back
+        final_result = _rotate_back(swapped_aligned, rotation_type)
+        
+        return final_result
+        
+    except Exception as e:
+        print(f"aligned_highres_swap Error")
+        try:
+            return highres_swap(swapper, img, target_face, source_face, upscale=upscale, restore_mouth=restore_mouth)
+        except:
+            return img
 
 def highres_swap(inswapper, img, target_face, source_face, upscale=1, restore_mouth=False):
     """
